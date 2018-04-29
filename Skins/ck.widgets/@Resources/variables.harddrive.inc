@@ -1,12 +1,6 @@
 [Variables]
 showDrives=1
 driveLetter1=#PROGRAMDRIVE#
-driveLetter2=
-driveLetter3=
-driveLetter4=
-driveLetter5=
-driveLetter6=
-driveLetter7=
 
 showRemovable=0
 showNetwork=0
