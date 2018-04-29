@@ -69,3 +69,21 @@ function SetVariable(parameter, value, doaction)
     end
 
 end
+
+function ToggleVariable(parameter, doaction)
+
+    if doaction == nil then
+        doaction = 'None'
+    end
+
+    local val = tonumber(SKIN:GetVariable(parameter, 0))
+
+    if val == 0 then
+        val = 1
+    else
+        val = 0
+    end
+
+    SetVariable(parameter, val, doaction)
+
+end

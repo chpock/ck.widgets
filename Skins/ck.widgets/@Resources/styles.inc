@@ -66,6 +66,24 @@ WindowsColorDark=[MeasureWindowsColorDark]
 BackgroundWidth=212
 BackgroundHeight=212
 
+[StyleBigText]
+H=67
+AntiAlias=1
+FontFace=Segoe UI Light
+FontSize=35
+FontColor=#SolidWhite#
+StringAlign=Left
+ClipString=1
+
+[StyleMediumText]
+H=35
+AntiAlias=1
+FontFace=Segoe UI
+FontSize=18
+FontColor=#SolidWhite#
+StringAlign=Left
+ClipString=1
+
 [StyleSmallText]
 H=21
 AntiAlias=1
