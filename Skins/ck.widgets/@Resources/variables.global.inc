@@ -12,8 +12,9 @@ tempUnits=C
 deg=[\176]
 
 [SettingsGlobal]
-Measure=Script
-ScriptFile=#@#Scripts\settings.lua
+Measure=Plugin
+Plugin=RainmeterTcl
+ScriptFile=#@#Scripts\settings.tcl
 SettingsFile=global
 UpdateDivider=-1
 

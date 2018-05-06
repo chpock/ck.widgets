@@ -6,8 +6,9 @@ customTZ3=
 currentTZ=
 
 [Settings]
-Measure=Script
-ScriptFile=#@#Scripts\settings.lua
+Measure=Plugin
+Plugin=RainmeterTcl
+ScriptFile=#@#Scripts\settings.tcl
 SettingsFile=time
 UpdateDivider=-1
 

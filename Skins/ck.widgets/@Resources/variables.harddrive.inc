@@ -11,8 +11,9 @@ showReadWrite=1
 showGraphActivity=1
 
 [Settings]
-Measure=Script
-ScriptFile=#@#Scripts\settings.lua
+Measure=Plugin
+Plugin=RainmeterTcl
+ScriptFile=#@#Scripts\settings.tcl
 SettingsFile=harddrive
 UpdateDivider=-1
 
