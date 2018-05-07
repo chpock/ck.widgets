@@ -23,8 +23,8 @@ proc Initialize {} {
 
     if { ![file exists $::settingsFile] } {
 
-        if { [catch [open $::settingsFile w] fd] } {
-            rm log -error "could not create an empty settings file"
+        if { [catch [list open $::settingsFile w] fd] } {
+            rm log -error "could not create an empty settings file: $fd"
             unset ::settingsFile
             return
         }
