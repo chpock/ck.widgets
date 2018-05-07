@@ -6,6 +6,8 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
+#set debug true
+
 proc Initialize {} {
 
     source [file join [rm getPathResources] Scripts _utilities.tcl]
