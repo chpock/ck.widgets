@@ -16,6 +16,7 @@ BorderColor=100,100,100,100
 SolidWhite=#ColorClouds#
 SolidGreyText=#ColorConcrete#
 
+; Flat UI Color Palette - https://www.webnots.com/flat-ui-color-codes/
 ColorTurquoise=1abc9c
 ColorEmerland=2ecc71
 ColorPeterriver=3498db
@@ -101,6 +102,12 @@ FontSize=9
 FontColor=#SolidGreyText#
 StringAlign=Left
 ClipString=1
+
+[StyleWindowsColorText]
+FontColor=[MeasureWindowsColor]
+Group=WindowsColorGroup
+; required for #WindowsColor# in BarColor property
+DynamicVariables=1
 
 [MeasurePaletteRegistry]
 ; Returns Windows accent palette.
@@ -191,7 +198,7 @@ Group=Graph#^#
 Meter=Image
 MeterStyle=GraphTop#^#
 X=[GraphTop#^#:X]
-Y=([GraphTop#^#:Y]+[GraphLeft#^#:H])
+Y=([GraphTop#^#:Y]+[GraphLeft#^#:H]-1)
 W=[GraphTop#^#:W]
 H=1
 Group=Graph#^#
