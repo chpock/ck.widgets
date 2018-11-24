@@ -13,6 +13,21 @@ proc Initialize {} {
     source [file join [rm getPathResources] Scripts _utilities.tcl]
 
     rm log -debug "Initializing the Calendar skin ..."
+
+    for { set i 1 } { $i <= 12 } { incr i } {
+        lappend ::gMonthLabels [clock format [clock scan "$i/1/2000"] -format "%B"]
+    }
+
+    for { set date [clock seconds] } { [clock format $date -format "%u"] != 1 } { incr date [expr { 24*60*60 }] } {}
+
+    for { set i 0 } { $i <= 6 } { incr i } {
+        lappend ::gDayLabels [string range \
+            [clock format $date -format "%a"] \
+            0 1 \
+        ]
+        incr date [expr { 24*60*60 }]
+    }
+
 }
 
 proc Update {} {
@@ -28,11 +43,10 @@ proc draw {} {
     set isLeadingZeroes [rm getVariable "LeadingZeroes" -default 0]
     set isStartOnMonday [rm getVariable "StartOnMonday" -default 1]
 
-    set dayLabels [rm getVariable "DayLabels" -default "Mo Tu We Th Fr Sa Su"]
+    set dayLabels [rm getVariable "DayLabels" -default $::gDayLabels]
     set dayLabels [split $dayLabels " "]
 
-    set monthLabels [rm getVariable "MonthLabels" -default \
-        "January February March April May June July August September October November December"]
+    set monthLabels [rm getVariable "MonthLabels" -default $::gMonthLabels]
     set monthLabels [split $monthLabels " "]
 
     lassign [clock format [clock seconds] -format "%Y %N %e %u"] cyear cmonth cday cweekday
