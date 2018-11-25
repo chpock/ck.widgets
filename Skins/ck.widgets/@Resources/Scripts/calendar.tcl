@@ -10,9 +10,10 @@ set debug true
 
 proc Initialize {} {
 
-    source [file join [rm getPathResources] Scripts _utilities.tcl]
-
     rm log -debug "Initializing the Calendar skin ..."
+
+    uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
+    uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
 
     for { set i 1 } { $i <= 12 } { incr i } {
         lappend ::gMonthLabels [clock format [clock scan "$i/1/2000"] -format "%B"]
@@ -32,13 +33,19 @@ proc Initialize {} {
 
 proc Update {} {
 
-    rm log -debug "Update the Calendar skin ..."
+    if { [info exists ::gLastRedraw] && $::gLastRedraw eq [clock format [clock seconds] -format "%Y %N %e"] } {
+        rm log -debug "The date is not changed, update is not necessary"
+        return
+    }
 
+    rm log -debug "Update the Calendar skin ..."
     draw
 
 }
 
 proc draw {} {
+
+    set ::gLastRedraw [clock format [clock seconds] -format "%Y %N %e"]
 
     set isLeadingZeroes [rm getVariable "LeadingZeroes" -default 0]
     set isStartOnMonday [rm getVariable "StartOnMonday" -default 1]
@@ -96,7 +103,6 @@ proc draw {} {
         rm setOption "Text" [lindex $dayLabels $i] -section "LabelDay$i"
 
     }
-
 
     set column [clock format [clock scan "$month/1/$year"] -format %u]
     if { $isStartOnMonday } {
@@ -174,6 +180,8 @@ proc move { args } {
         }
 
     }
+
+    unset -nocomplain ::gLastRedraw
 
     rm setSkinState update
 

@@ -10,9 +10,11 @@ set debug true
 
 proc Initialize {} {
 
-    source [file join [rm getPathResources] Scripts _utilities.tcl]
-
     rm log -debug "Initializing the HardDrive skin ..."
+
+    uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
+    uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
+
 }
 
 proc Update {} {
@@ -99,7 +101,7 @@ proc Update {} {
 
         rm setContextMenu "[expr { $enabled ? {Hide} : {Show} }] drive type: [dict get $v title]" \
             -action [rm bang \
-                CommandMeasure Settings "storeVariable {show[dict get $v title]} {[expr { !$enabled }]}; rm setMeasureState {[rm getMeasureName]} update" \
+                CommandMeasure Tcl "storeVariable {show[dict get $v title]} {[expr { !$enabled }]}; rm setMeasureState {[rm getMeasureName]} update" \
             ]
 
     }
@@ -108,12 +110,12 @@ proc Update {} {
 
     rm setContextMenu "[expr { $isShowReadWrite ? {Hide} : {Show} }] read/write rate" \
         -action [rm bang \
-            CommandMeasure Settings "storeVariable showReadWrite {[expr { !$isShowReadWrite }]}; rm setSkinState refresh" \
+            CommandMeasure Tcl "storeVariable showReadWrite {[expr { !$isShowReadWrite }]}; rm setSkinState refresh" \
         ]
 
     rm setContextMenu "[expr { $isShowGraphActivity ? {Hide} : {Show} }] activity graph" \
         -action [rm bang \
-            CommandMeasure Settings "storeVariable showGraphActivity {[expr { !$isShowGraphActivity }]}; rm setMeasureState {[rm getMeasureName]} update" \
+            CommandMeasure Tcl "storeVariable showGraphActivity {[expr { !$isShowGraphActivity }]}; rm setMeasureState {[rm getMeasureName]} update" \
         ]
 
     rm setMeasureState GraphActivity [expr { $isShowGraphActivity ? {enable} : {disable} }] -group
@@ -147,12 +149,12 @@ proc showDrive { driveLetterReq } {
         }
 
         if { $shown } {
-            rm commandMeasure Settings "storeVariable {driveLetter[incr showDrivesNew]} {$driveLetter}"
+            storeVariable "driveLetter[incr showDrivesNew]" $driveLetter
         }
 
     }
 
-    rm commandMeasure Settings "storeVariable showDrives $showDrivesNew"
+    storeVariable showDrives $showDrivesNew
     rm setSkinState refresh
 
 }
@@ -169,12 +171,12 @@ proc hideDrive { driveLetterReq } {
         set driveLetter [rm getVariable "driveLetter$i"]
 
         if { $driveLetter ne $driveLetterReq } {
-            rm commandMeasure Settings "storeVariable {driveLetter[incr showDrivesNew]} {$driveLetter}"
+            storeVariable "driveLetter[incr showDrivesNew]" $driveLetter
         }
 
     }
 
-    rm commandMeasure Settings "storeVariable showDrives $showDrivesNew"
+    storeVariable showDrives $showDrivesNew
     rm setSkinState refresh
 
 }

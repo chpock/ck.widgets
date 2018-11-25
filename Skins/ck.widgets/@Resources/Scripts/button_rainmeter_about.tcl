@@ -21,27 +21,3 @@ proc Update {} {
     rm log -debug "Update the '[file tail [rm getSkinName]]' skin ..."
 
 }
-
-proc tkconToggle {} {
-
-    ::thread::send [rm getThreadGUI] {
-        package require tkcon
-
-        if {
-            [info exists ::tkcon::PRIV(root)] &&
-            [winfo exists $::tkcon::PRIV(root)] &&
-            [wm state $::tkcon::PRIV(root)] ne "withdrawn"
-        } {
-            tkcon hide
-        } else {
-            tkcon show
-            wm iconbitmap .tkcon [file join $::tcl::kitpath extra icons tkcon.ico]
-        }
-
-        proc exit { args } {
-            tkcon hide
-        }
-
-    }
-
-}

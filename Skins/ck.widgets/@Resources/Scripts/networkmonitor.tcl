@@ -10,9 +10,11 @@ set debug true
 
 proc Initialize {} {
 
-    source [file join [rm getPathResources] Scripts _utilities.tcl]
-
     rm log -debug "Initializing the NetworkMonitor skin ..."
+
+    uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
+    uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
+
 }
 
 proc Update {} {
