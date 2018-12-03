@@ -106,3 +106,33 @@ proc fixedFormatBytes { val {args {
     return [format "%.${fs}f[lindex {{ } { k} { M} { G} { T} { P} { E} { Z} { Y}} $divcount]" $val]
 
 }
+
+# source: https://wiki.tcl-lang.org/page/Formatting+durations
+proc howLongAgo { time {from {}} } {
+    # Returns the difference between $time and now in vague terms
+    if { $from eq "" } {
+        set from [clock seconds]
+    }
+    set diff [expr { $from - $time }]
+    # What units are we dealing with (don't care about leap years -
+    # we're being vague, after all :)
+    foreach { div unit } {
+        "60*60*24*365"        year
+        "60*60*24*30"         month
+        "60*60*24*7"          week
+        "60*60*24"            day
+        "60*60"               hour
+        "60"                  minute
+        "1"                   second
+    } {
+        if { [set num [expr { $diff / [expr $div] }]] > 0 } {
+            break
+        }
+    }
+    if { $num != 1 } { append unit "s" }
+    if { $num == 0 } { return "now" }
+    if { $num == 1 } { return "a $unit ago" }
+    if { $num == 2 } { return "a couple of $unit ago" }
+    if { $num > 2 && $num < 5 } { return "a few $unit ago" }
+    return "$num $unit ago"
+}

@@ -10,53 +10,68 @@
 
 set settingsUI {
 
-    gridplus window .settings -wtitle "Settings: [file tail [rm getSkinName]]"
+    tkm::packer -path .settings -newwindow -title "Settings: [file tail [rm getSkinName]]" {
 
-    gridplus radiobutton .settings.size -title "Button Size:" {
-        {. "16px"  -16} {. "32px"  -32 } {. "48px"  -48}
-        {. "64px"  -64} {. "128px" -128}
-    }
+        set action [list apply {{ window action varSize } {
 
-    gridplus button .settings.action {
-        {.ok    OK    :tick}
-        {.close Close :cross}
-        {.apply Apply :cog_go}
-    }
+            if { $action in {ok apply} } {
 
-    gridplus layout .settings.layout {
-        .settings.size:n .settings.action:nw
-    }
+                # button size changed
+                if { [rm getVariable BackgroundHeight] ne [set $varSize] } {
 
-    gpset [list \
-        .settings.size [rm getVariable BackgroundHeight]
-    ]
+                    storeVariable BackgroundHeight [set $varSize]
+                    storeVariable BackgroundWidth  [set $varSize]
 
-    proc settings:action,ok {} {
-        settings:action,apply
-        settings:action,close
-    }
+                    rm setMeterState Button update
+                    rm setMeterState SkinBackground update -group
+                    rm setSkinState update
 
-    proc settings:action,apply {} {
+                }
 
-        if { [rm getVariable BackgroundHeight] eq $::(.settings.size) } {
-            # button size is not changed
-            return
+            }
+
+            if { $action in {ok close} } {
+               destroy $window
+            }
+
+        }} [tkm::parent]]
+
+        tkm::labelframe -text "Button Size:" -image [tkm::icon arrow_out] -padx 10 -pady 13 -side left -anchor n -- {
+
+            tkm::defaults -fill both -padx 5 -pady 3
+
+            set varSize [tkm::var]
+
+            tkm::radiobutton -text "16px" -variable $varSize -value "16" -column 0
+            tkm::radiobutton -text "32px" -variable $varSize -value "32" -column +
+            tkm::radiobutton -text "48px" -variable $varSize -value "48" -column +
+
+            tkm::radiobutton -text "64px"  -variable $varSize -value "64"  -column 0 -row +
+            tkm::radiobutton -text "128px" -variable $varSize -value "128" -column +
+
         }
 
-        storeVariable BackgroundHeight $::(.settings.size)
-        storeVariable BackgroundWidth $::(.settings.size)
+        tkm::separator -orient vertical -side left -pady 13 -fill y
 
-        rm setMeterState Button update
-        rm setMeterState SkinBackground update -group
-        rm setSkinState update
+        tkm::frame -side right -padx 10 -pady 13 -- {
+
+            tkm::defaults -pady 3
+
+            tkm::button -text "OK"    -image [tkm::icon tick]   \
+                -command [concat $action [list ok    $varSize]]
+            tkm::button -text "Close" -image [tkm::icon cross]  \
+                -command [concat $action [list close $varSize]]
+            tkm::button -text "Apply" -image [tkm::icon cog_go] \
+                -command [concat $action [list apply $varSize]]
+
+        }
+
+        set $varSize [rm getVariable BackgroundHeight]
+
+        wm resizable [tkm::parent] 0 0
+
+        tkm::centerWindow [tkm::parent]
 
     }
-
-    proc settings:action,close {} {
-        destroy .settings
-    }
-
-    pack .settings.layout -padx 5 -pady 5
 
 }
-

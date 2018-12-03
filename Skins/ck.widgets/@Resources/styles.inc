@@ -59,6 +59,8 @@ ColorAsbestos=7f8c8d
 ;ColorMauve=76608a
 ;ColorSienna=a0522d
 
+ColorOverlay=0,0,0,240
+
 WindowsColor=[MeasureWindowsColor]
 WindowsColorText=[MeasureWindowsColorText]
 WindowsColorDark=[MeasureWindowsColorDark]

@@ -83,7 +83,9 @@ proc settingsUI {} {
             rm writeKeyValue -key $option -value $value -file %settingsFile%
         }
 
-        package require gridplus
+        package require tkmanager
+
+        lappend ::tkm::iconPath [file join $::tcl::kitpath extra icons famfamfam]
 
         %settingsUI%
 
