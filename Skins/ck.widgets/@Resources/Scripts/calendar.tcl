@@ -151,6 +151,18 @@ proc draw {} {
 
     }
 
+    rm meter update "Title"
+
+    for { set i 0 } { $i <= 6 } { incr i } {
+        rm meter update "LabelDay$i"
+    }
+
+    for { set i 0 } { $i <= 41 } { incr i } {
+        rm meter update "Day$i"
+    }
+
+    rm skin redraw
+
 }
 
 proc move { args } {
@@ -183,6 +195,6 @@ proc move { args } {
 
     unset -nocomplain ::gLastRedraw
 
-    rm setSkinState update
+    rm measure update [rm getMeasureName]
 
 }

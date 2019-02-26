@@ -8,6 +8,10 @@
 
 ; Based on the win10widgets (https://github.com/tjmarkham/win10widgets) by TJ Markham (http://tjmarkham.com)
 
+[Rainmeter]
+DefaultUpdateDivider=-1
+Update=1000
+
 [MeasureAutoBorder]
 ; Shows/hides left, right, top, and bottom borders depending on widget location.
 Measure=Calc

@@ -66,7 +66,7 @@ proc settingsUI {} {
         return -code error $msg
     }
 
-    ::thread::send [rm getThreadGUI] [string map [list \
+    rm sendThread GUI [string map [list \
         %settingsUI% $::settingsUI \
         %settingsFile% [list $::settingsFile] \
     ] {

@@ -11,7 +11,7 @@
 [Variables]
 ; colors
 BackgroundColor=24,24,24,217
-BorderColor=100,100,100,100
+BorderColor=72,72,72,217
 
 SolidWhite=#ColorClouds#
 SolidGreyText=#ColorConcrete#

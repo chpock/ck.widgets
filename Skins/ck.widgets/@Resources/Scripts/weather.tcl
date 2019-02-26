@@ -6,7 +6,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-set ::debug 1
+set ::debug false
 
 proc Initialize {} {
 
@@ -15,9 +15,89 @@ proc Initialize {} {
     uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
     uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
 
+    rm setContextMenu "Configure skin" \
+        -action [rm bang CommandMeasure [rm getMeasureName] "settingsUI"]
+
+    if { [info exists ::debug] && [string is true -strict $::debug] } {
+        rm setContextMenu "Open tkcon" \
+            -action [rm bang CommandMeasure [rm getMeasureName] "rm tkcon"]
+    }
+
+}
+
+proc updateBackground { } {
+
+    rm log -debug "Update background..."
+
+    foreach var {
+        TopPadding
+        PadY
+        PadYForecast
+        PadYCurrentWeather
+        HeightCurrentWeather
+        HeightCurrentLocation
+        HeightCurrentUpdate
+        HeightForecastDay
+        HeightForecastIcon
+        HeightForecastTemp
+    } {
+        set $var [rm getVariable $var -format integer -default 0]
+        if { [set $var] eq "" || [set $var] eq "0" } {
+            rm log -warn "Variable '$var' is not defined"
+        }
+        rm log -trace "$var = '[set $var]'"
+    }
+
+    foreach var {
+        showLocation
+        showUpdate
+        showForecast
+        showForecastDay
+        showForecastIcon
+        showForecastTemp
+    } {
+        set $var [rm getVariable $var -format integer -default 1]
+        if { [set $var] eq "" } {
+            rm log -warn "Variable '$var' has empty value"
+            set $var 1
+        }
+    }
+
+    set BackgroundHeight {
+        $TopPadding +
+        $HeightCurrentWeather +
+        ( $showLocation || $showUpdate || ($showForecast && ($showForecastDay || $showForecastIcon || $showForecastTemp)) ) * (
+             $PadYCurrentWeather +
+             $showLocation * ($HeightCurrentLocation + $PadY) +
+             $showUpdate * ($HeightCurrentUpdate + $PadY) +
+             ( $showForecast && ($showForecastDay || $showForecastIcon || $showForecastTemp) ) * (
+                 ($showLocation || $showUpdate) * $PadYForecast +
+                 $showForecastDay * ($HeightForecastDay + $PadY) +
+                 $showForecastIcon * ($HeightForecastIcon + $PadY) +
+                 $showForecastTemp * ($HeightForecastTemp + $PadY)
+             )
+        ) +
+        $TopPadding
+    }
+
+    rm log -trace "Background height: [subst -nobackslashes -nocommands $BackgroundHeight]"
+
+    set BackgroundHeight [expr $BackgroundHeight]
+
+    rm log -debug "Result background height: $BackgroundHeight"
+
+    rm setVariable "BackgroundHeight" $BackgroundHeight
+    rm meterGroup update "SkinBackground"
+
 }
 
 proc Update {} {
+
+    if { [rm getVariable "initBackground" -default 0] in {"" 0} } {
+        rm log -debug "Background is not initialized"
+        updateBackground
+        rm setVariable "initBackground" 1
+    }
 
     # do not update more than once every 20 minutes
     if {
@@ -27,7 +107,7 @@ proc Update {} {
     } {
 
         rm log -debug "Don't need to update the '[file tail [rm getSkinName]]' skin"
-        rm log -debug "Last successful update is: ${::gLastSuccessfulUpdate}; Current timestamp is: [clock seconds]; Diff: [expr { [clock seconds] - ${::gLastSuccessfulUpdate} }]; Force update: [rm getVariable updateForce]"
+        rm log -debug "The last successful update is: ${::gLastSuccessfulUpdate}; Current timestamp is: [clock seconds]; Diff: [expr { [clock seconds] - ${::gLastSuccessfulUpdate} }]; Force update: [rm getVariable updateForce]"
 
         set lastUpdate [howLongAgo $::gLastUpdate]
         rm meter set LastUpdate "Text" "Updated: $lastUpdate"
@@ -71,6 +151,7 @@ proc Update {} {
         rm meterGroup hide WeatherMeters
         rm meter      hide RetrievingWeather
         rm meterGroup show RefreshOverlay
+        rm meterGroup update RefreshOverlay
         rm meter      hide RefreshButtonHoverEdge
 
         return -level 2
@@ -92,7 +173,7 @@ proc Update {} {
         [set varWOID [rm getVariable "locationWOID"]] eq ""
     } {
 
-        unset varWOID
+        unset -nocomplain varWOID
 
         rm log -notice "Request location: http://ipinfo.io/geo ..."
 
@@ -245,22 +326,64 @@ proc Update {} {
     rm meter set CurrentTemp     "Text"      [{*}$tempString $conditionTemp]
 
     for { set i 0 } { $i < $fcCount } { incr i } {
-        if { ![rm meter exists ForecastTitle$i] } {
+        if { ![rm meter exists ForecastDay$i] } {
             rm log -debug "Forecast #$i doesn't exist"
         } else {
-            rm meter set ForecastTitle$i "Text" [set "forecastDay$i"]
-            rm meter set ForecastImage$i "ImageName" "images/[set forecastCode$i].png"
-            rm meter set ForecastHi$i    "Text" [{*}$tempStringShort [set forecastHi$i]]
-            rm meter set ForecastLo$i    "Text" [{*}$tempStringShort [set forecastLo$i]]
+            rm meter set ForecastDay$i  "Text" [set "forecastDay$i"]
+            rm meter set ForecastIcon$i "ImageName" "images/[set forecastCode$i].png"
+            rm meter set ForecastHi$i   "Text" [{*}$tempStringShort [set forecastHi$i]]
+            rm meter set ForecastLo$i   "Text" [{*}$tempStringShort [set forecastLo$i]]
         }
     }
 
-    rm log -debug "set last successful update: [clock format [clock seconds]]"
+    rm log -debug "set the last successful update timestamp: [clock format [clock seconds]]"
 
     rm setVariable "updateForce" 0
     set ::gLastSuccessfulUpdate [clock seconds]
 
+    foreach var {
+        showLocation
+        showUpdate
+        showForecast
+        showForecastDay
+        showForecastIcon
+        showForecastTemp
+    } {
+        set $var [rm getVariable $var -format integer -default 1]
+        if { [set $var] eq "" } {
+            rm log -warn "Variable '$var' has empty value"
+            set $var 1
+        }
+    }
+
+    if { !$showLocation } {
+        rm meter hide "CurrentLocation"
+    }
+
+    if { !$showUpdate } {
+        rm meter hide "LastUpdate"
+    }
+
+    if { !$showForecast } {
+        set showForecastDay  0
+        set showForecastIcon 0
+        set showForecastTemp 0
+    }
+
+    if { !$showForecastDay } {
+        rm meterGroup hide "ForecastDay"
+    }
+
+    if { !$showForecastIcon } {
+        rm meterGroup hide "ForecastIcon"
+    }
+
+    if { !$showForecastTemp } {
+        rm meterGroup hide "ForecastTemp"
+    }
+
     rm meterGroup update WeatherMeters
+
     rm skin update
 
 }
@@ -385,24 +508,23 @@ set settingsUI {
         tkm::centerWindow [tkm::parent]
 
         $wSearchButton configure -command [list apply {{
-            wSearchListbox wSearchButton wSearchRadioAuto varSearchEntry
+            wToplevel wSearchListbox wSearchButton wSearchRadioAuto varSearchEntry
         } {
-
-            #package require tkcon
-            #tkcon show
 
             set ::gMapWOID [list]
 
-            set returnError [list apply {{ logMessage { showMessage "Internal Error" } } {
+            set returnError [list apply {{ wToplevel logMessage { showMessage "Internal Error" } } {
 
-                set msg "[file tail [rm getSkinName]]: search location: $logMessage"
+                set msg "[file tail [rm getSkinName]]: Search location: $logMessage"
 
                 rm log -error $msg
-                puts $msg
+
+                tk_messageBox -icon error -message $msg -parent $wToplevel \
+                    -title "Error" -type ok
 
                 return -level 2
 
-            }}]
+            }} $wToplevel]
 
             if { [catch {
                 package require http
@@ -514,7 +636,7 @@ set settingsUI {
             $wSearchButton state "!disabled"
             $wSearchRadioAuto state "!disabled"
 
-        }} $wSearchListbox $wSearchButton $wSearchRadioAuto $varSearchEntry]
+        }} [tkm::parent] $wSearchListbox $wSearchButton $wSearchRadioAuto $varSearchEntry]
 
         $wSearchEntry configure -validate all -validatecommand [list apply {{ wSearchEntry wSearchButton value } {
 
@@ -655,7 +777,7 @@ set settingsUI {
 
                 if { $update } {
                     rm setVariable "updateForce" 1
-                    rm meterGroup update SkinBackground
+                    rm setVariable "initBackground" 0
                     rm measure update [rm getMeasureName]
                 }
 
