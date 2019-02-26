@@ -12,6 +12,8 @@ proc Initialize {} {
 
     rm log -debug "Initializing the '[file tail [rm getSkinName]]' skin ..."
 
+    rm setVariable apixu_key "8b0c874f7e9945eeb96194934192602"
+
     uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
     uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
 
@@ -22,6 +24,26 @@ proc Initialize {} {
         rm setContextMenu "Open tkcon" \
             -action [rm bang CommandMeasure [rm getMeasureName] "rm tkcon"]
     }
+
+    package require rl_json
+
+    set fd [open [file join [rm getPathSkin] "conditions.json"] r]
+    fconfigure $fd -encoding binary -translation binary
+    set data [read $fd]
+    close $fd
+
+    # remove BOM
+    if { [string range $data 0 2] eq "\xef\xbb\xbf" } {
+        rm log -debug "remove BOM"
+        set data [string range $data 3 end]
+    }
+    set data [encoding convertfrom utf-8 $data]
+
+    set conditions_map [list]
+    foreach rec [rl_json::json get $data] {
+        dict set conditions_map [dict get $rec code] $rec
+    }
+    rm setVariable conditions_map $conditions_map
 
 }
 
@@ -192,7 +214,7 @@ proc Update {} {
         set ncode [http::ncode $token]
         if { $ncode != "200" } {
             http::cleanup $token
-            {*}$returnError "connection error code: $ncode" "Connection Error$ncode"
+            {*}$returnError "connection error code: $ncode" "Connection Error: $ncode"
         }
 
         set data [http::data $token]
@@ -219,27 +241,26 @@ proc Update {} {
 
     }
 
-    set url "https://query.yahooapis.com/v1/public/yql"
+    set url "https://api.apixu.com/v1/forecast.json"
 
     if { [info exists varWOID] } {
 
-        append url ?[http::formatQuery {*}[list \
-            q        "select * from weather.forecast where woeid = $varWOID" \
-            format   "json" \
-            env      "store://datatables.org/alltableswithkeys" \
-            callback "" \
-        ]]
+        append url ?[http::formatQuery \
+            q $varWOID \
+        ]
 
     } else {
 
-        append url ?[http::formatQuery {*}[list \
-            q        "select * from weather.forecast where woeid in (select woeid from geo.places(1) where text=\"$location\")" \
-            format   "json" \
-            env      "store://datatables.org/alltableswithkeys" \
-            callback "" \
-        ]]
+        append url ?[http::formatQuery \
+            q $location
+        ]
 
     }
+
+    append url &[http::formatQuery \
+        "key"  [rm getVariable apixu_key] \
+        "days" "5"
+    ]
 
     rm log -notice "Request weather: $url"
 
@@ -258,7 +279,7 @@ proc Update {} {
     set ncode [http::ncode $token]
     if { $ncode != "200" } {
         http::cleanup $token
-        {*}$returnError "connection error code: $ncode" "Connection Error$ncode"
+        {*}$returnError "connection error code: $ncode" "Connection Error: $ncode"
     }
 
     set data [http::data $token]
@@ -273,36 +294,42 @@ proc Update {} {
 
     set data $errmsg
 
+    set cond_map [rm getVariable conditions_map]
+    set hour [clock format [clock seconds] -format "%k"]
+    if { $hour > 6 && $hour < 21 } {
+        set mode "day"
+    } else {
+        set mode "night"
+    }
+
     if { [catch {
 
-        set data [dict get $data query results channel]
+        set location "[dict get $data location name], [dict get $data location region], [dict get $data location country]"
 
-        set location "[dict get $data location city], [dict get $data location region], [dict get $data location country]"
+        set conditionCode [dict get $data current condition code]
+        set conditionDate [dict get $data current last_updated_epoch]
+        set conditionTemp [dict get $data current temp_f]
+        set conditionText [dict get $cond_map [dict get $data current condition code] $mode]
 
-        set conditionCode [dict get $data item condition code]
-        set conditionDate [dict get $data item condition date]
-        set conditionTemp [dict get $data item condition temp]
-        set conditionText [dict get $data item condition text]
+        rm log -debug "lastUpdate: $conditionDate"
+        set ::gLastUpdate $conditionDate
+        set lastUpdate [howLongAgo $conditionDate]
 
-        if { [catch { clock scan [dict get $data lastBuildDate] } lastUpdate] } {
-            rm log -warn "Could not retrieve last update date: $::errorInfo"
-            set lastUpdate "UNKNOWN"
-        } else {
-            rm log -debug "lastUpdate: $lastUpdate"
-            set ::gLastUpdate $lastUpdate
-            set lastUpdate [howLongAgo $lastUpdate]
-        }
-
-        set forecastData [dict get $data item forecast]
+        set forecastData [dict get $data forecast forecastday]
 
         set fcCount 0
         foreach forecastDataItem $forecastData {
-            set forecastCode$fcCount [dict get $forecastDataItem code]
-            set forecastDate$fcCount [dict get $forecastDataItem date]
-            set forecastDay$fcCount  [dict get $forecastDataItem day]
-            set forecastHi$fcCount   [dict get $forecastDataItem high]
-            set forecastLo$fcCount   [dict get $forecastDataItem low]
-            set forecastText$fcCount [dict get $forecastDataItem text]
+            set forecastCode$fcCount [dict get $forecastDataItem day condition code]
+            set forecastDate$fcCount [dict get $forecastDataItem date_epoch]
+            set forecastDay$fcCount  [lindex "Sun Mon Tue Wed Thu Fri Sat Sun" \
+                                         [clock format \
+                                             [dict get $forecastDataItem date_epoch] \
+                                             -format "%w" \
+                                         ] \
+                                     ]
+            set forecastHi$fcCount   [dict get $forecastDataItem day maxtemp_f]
+            set forecastLo$fcCount   [dict get $forecastDataItem day mintemp_f]
+            set forecastText$fcCount [dict get $cond_map [dict get $forecastDataItem day condition code] $mode]
             incr fcCount
         }
 
@@ -321,7 +348,7 @@ proc Update {} {
 
     rm meter set CurrentLocation "Text"      "Location: $location"
     rm meter set LastUpdate      "Text"      "Updated: $lastUpdate"
-    rm meter set CurrentImage    "ImageName" "images/${conditionCode}.png"
+    rm meter set CurrentImage    "ImageName" "images/$mode/[dict get $cond_map $conditionCode icon].png"
     rm meter set CurrentText     "Text"      $conditionText
     rm meter set CurrentTemp     "Text"      [{*}$tempString $conditionTemp]
 
@@ -330,7 +357,7 @@ proc Update {} {
             rm log -debug "Forecast #$i doesn't exist"
         } else {
             rm meter set ForecastDay$i  "Text" [set "forecastDay$i"]
-            rm meter set ForecastIcon$i "ImageName" "images/[set forecastCode$i].png"
+            rm meter set ForecastIcon$i "ImageName" "images/day/[dict get $cond_map [set forecastCode$i] icon].png"
             rm meter set ForecastHi$i   "Text" [{*}$tempStringShort [set forecastHi$i]]
             rm meter set ForecastLo$i   "Text" [{*}$tempStringShort [set forecastLo$i]]
         }
@@ -545,12 +572,12 @@ set settingsUI {
 
             set searchString [set $varSearchEntry]
 
-            set url "https://query.yahooapis.com/v1/public/yql"
+            set url "http://api.apixu.com/v1/search.json"
 
-            append url ?[http::formatQuery {*}[list \
-                q        "select * from geo.places(50) where text=\"$searchString\"" \
-                format   "json" \
-            ]]
+            append url ?[http::formatQuery \
+                q   $searchString \
+                key [rm getVariable apixu_key] \
+            ]
 
             rm log -notice "Request - search location: $url"
 
@@ -584,48 +611,18 @@ set settingsUI {
 
             set data $errmsg
 
-            if { ![dict exist $data query count] } {
-                rm log -error "Data: $data"
-                {*}$returnError "Could not find 'query->count' in data"
-            }
-
-            set count [dict get $data query count]
+            set count [llength $data]
 
             if { $count < 1 } {
                 {*}$returnError "Could not find any locations"
-            }
-
-            if { $count == 1 } {
-                set data [list [dict get $data query results place]]
-            } else {
-                set data [dict get $data query results place]
             }
 
             foreach rec $data {
 
                 rm log -debug "REC: $rec"
 
-                set name [list]
-
-                if { [dict exists $rec country content] } {
-                    lappend name [dict get $rec country content]
-                }
-
-                if { [dict exists $rec admin1 content] } {
-                    lappend name [dict get $rec admin1 content]
-                }
-
-                if { [dict exists $rec admin2 content] } {
-                    lappend name [dict get $rec admin2 content]
-                }
-
-                if { [dict exists $rec locality1 content] } {
-                    lappend name [dict get $rec locality1 content]
-                }
-
-                set name [join $name {, }]
-
-                set woeid [dict get $rec woeid]
+                set name  [dict get $rec name]
+                set woeid [dict get $rec name]
 
                 $wSearchListbox insert end $name
 
@@ -799,7 +796,6 @@ set settingsUI {
         $wActionApply configure -command [concat $procAction apply]
 
     }
-
 
     set $varParamTempUnits [rm getVariable unitTemp]
 
