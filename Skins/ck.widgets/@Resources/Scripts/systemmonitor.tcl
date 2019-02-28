@@ -6,20 +6,28 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-set debug 0
+set debug 1
 
 proc Initialize {} {
 
-    rm log -debug "Initializing the SystemMonitor skin ..."
+    rm log -debug "Initializing the '[file tail [rm getSkinName]]' skin ..."
 
     uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
     uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
+
+    rm setContextMenu "Configure skin" \
+        -action [rm bang CommandMeasure [rm getMeasureName] "settingsUI"]
+
+    if { [info exists ::debug] && [string is true -strict $::debug] } {
+        rm setContextMenu "Open tkcon" \
+            -action [rm bang CommandMeasure [rm getMeasureName] "rm tkcon"]
+    }
 
 }
 
 proc Update {} {
 
-    rm log -debug "Update the SystemMonitor skin ..."
+    rm log -debug "Update the '[file tail [rm getSkinName]]' skin ..."
 
     rm resetContextMenu
 
@@ -49,15 +57,15 @@ proc updateHwinfoState {} {
         rm log -debug "HWiNFO is not running"
 
         if { $showCoreTempsNow } {
-            rm setMeasureState GroupCoreTemps disabled -group
-            rm setMeterState   GroupCoreTemps disabled -group
+            rm measureGroup disable GroupCoreTemps
+            rm meterGroup   disable GroupCoreTemps
             rm setVariable  showCoreTempsNow 0
             rm log -debug "Turn off core temps"
         }
 
         if { $showCoreVoltagesNow } {
-            rm setMeasureState GroupCoreVoltages disabled -group
-            rm setMeterState   GroupCoreVoltages disabled -group
+            rm measureGroup disable GroupCoreVoltages
+            rm meterGroup   disable GroupCoreVoltages
             rm setVariable showCoreVoltagesNow 0
             rm log -debug "Turn off core voltages"
         }
@@ -74,8 +82,13 @@ proc updateHwinfoState {} {
 
         rm log -debug "HWiNFO is running"
 
-        set threadsPerCore [rm getVariable threadsPerCore]
-        set maxRealCores [expr { int(ceil(1.0 * $cpuCores / $threadsPerCore)) }]
+        package require twapi
+        [[twapi::wmi_root] ExecQuery "Select * from Win32_Processor"] -iterate obj { break }
+        set maxRealCores [$obj NumberOfCores]
+        set threadsPerCore [expr { int(ceil(1.0 * $cpuCores / $maxRealCores)) }]
+
+        rm log -debug "Real cores: $maxRealCores"
+        rm log -debug "Threads per core: $threadsPerCore"
 
         if { !$showCoreTempsNow && $showCoreTemps } {
 
@@ -93,7 +106,7 @@ proc updateHwinfoState {} {
                 rm log -debug "Enable measure MeasureCoreTemp$i with: $bangs"
 
                 rm setOption OnChangeAction $bangs -section MeasureCoreTemp$i
-                rm setMeasureState MeasureCoreTemp$i enabled
+                rm measure enable MeasureCoreTemp$i
 
             }
 
@@ -104,7 +117,7 @@ proc updateHwinfoState {} {
                 rm log -debug "Enable meter CPUTempCore$i on MeasureCoreTemp$realCore"
 
                 rm setOption MeasureName MeasureCoreTemp$realCore -section CPUTempCore$i
-                rm setMeterState CPUTempCore$i enabled
+                rm meter enable CPUTempCore$i
 
             }
 
@@ -126,7 +139,7 @@ proc updateHwinfoState {} {
                 rm log -debug "Enable measure MeasureCoreVoltage$i with: $bangs"
 
                 rm setOption OnChangeAction $bangs -section MeasureCoreVoltage$i
-                rm setMeasureState MeasureCoreVoltage$i enabled
+                rm measure enable MeasureCoreVoltage$i
 
             }
 
@@ -137,7 +150,7 @@ proc updateHwinfoState {} {
                 rm log -debug "Enable meter CPUVoltageCore$i on MeasureCoreVoltage$realCore"
 
                 rm setOption MeasureName MeasureCoreVoltage$realCore -section CPUVoltageCore$i
-                rm setMeterState CPUVoltageCore$i enabled
+                rm meter enable CPUVoltageCore$i
 
             }
 

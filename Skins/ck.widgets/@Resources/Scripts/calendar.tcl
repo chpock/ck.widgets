@@ -6,11 +6,11 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 
-set debug false
+set debug 0
 
 proc Initialize {} {
 
-    rm log -debug "Initializing the Calendar skin ..."
+    rm log -debug "Initializing the '[file tail [rm getSkinName]]' skin ..."
 
     uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
     uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
@@ -38,7 +38,7 @@ proc Update {} {
         return
     }
 
-    rm log -debug "Update the Calendar skin ..."
+    rm log -debug "Update the '[file tail [rm getSkinName]]' skin ..."
     draw
 
 }
