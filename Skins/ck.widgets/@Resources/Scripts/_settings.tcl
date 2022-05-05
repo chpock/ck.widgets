@@ -45,6 +45,14 @@ rm log -debug "Using settings file: $settingsFile"
 
 if { ![file exists $settingsFile] } {
 
+    if { ![file isdirectory [file dirname $settingsFile]] } {
+        if { [catch [list file mkdir [file dirname $settingsFile]] errmsg] } {
+            rm log -error "could not create a directory for the settings file: $errmsg"
+            unset settingsFile
+            return
+        }
+    }
+
     if { [catch [list open $settingsFile w] fd] } {
         rm log -error "could not create an empty settings file: $fd"
         unset settingsFile

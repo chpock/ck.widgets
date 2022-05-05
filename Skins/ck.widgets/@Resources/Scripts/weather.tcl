@@ -12,7 +12,8 @@ proc Initialize {} {
 
     rm log -debug "Initializing the '[file tail [rm getSkinName]]' skin ..."
 
-    rm setVariable apixu_key "8b0c874f7e9945eeb96194934192602"
+    rm setVariable apixu_key "86db68646fdde87944e035e74336dc54"
+    rm setVariable ipinfo_token "22a30e48bd5f11"
 
     uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
     uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
@@ -197,10 +198,16 @@ proc Update {} {
 
         unset -nocomplain varWOID
 
-        rm log -notice "Request location: http://ipinfo.io/geo ..."
+        set url "http://ipinfo.io/geo"
+
+        rm log -notice "Request location: $url ..."
+
+        append url ?[http::formatQuery \
+            "token"  [rm getVariable ipinfo_token] \
+        ]
 
         if { [catch {
-            set token [http::geturl "http://ipinfo.io/geo" -timeout 2000]
+            set token [http::geturl $url  -timeout 2000]
         } errmsg] } {
             {*}$returnError $errmsg "Connection Error"
         }
@@ -241,25 +248,24 @@ proc Update {} {
 
     }
 
-    set url "https://api.apixu.com/v1/forecast.json"
+    set url "http://api.weatherstack.com/current"
 
     if { [info exists varWOID] } {
 
         append url ?[http::formatQuery \
-            q $varWOID \
+            query $varWOID \
         ]
 
     } else {
 
         append url ?[http::formatQuery \
-            q $location
+            query $location
         ]
 
     }
 
     append url &[http::formatQuery \
-        "key"  [rm getVariable apixu_key] \
-        "days" "5"
+        "access_key"  [rm getVariable apixu_key] \
     ]
 
     rm log -notice "Request weather: $url"
