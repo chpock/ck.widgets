@@ -1,1 +1,1 @@
-/d/Projects/tclspotify/src/pkgIndex.tcl
+package ifneeded tclspotify 1.0.0 [list source [file join $dir tclspotify.tcl]]
