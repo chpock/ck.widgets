@@ -109,8 +109,13 @@ proc Update {} {
                 set status "ERROR: no is_playing"
             }
 
-            if { [dict exists $::gSpotifyState "item" "album" "name"] } {
-                set track [encoding convertfrom utf-8 [dict get $::gSpotifyState "item" "album" "name"]]
+            #if { [dict exists $::gSpotifyState "item" "album" "name"] } {
+            #    set track [encoding convertfrom utf-8 [dict get $::gSpotifyState "item" "album" "name"]]
+            #} else {
+            #    set track "Unknown"
+            #}
+            if { [dict exists $::gSpotifyState "item" "name"] } {
+                set track [encoding convertfrom utf-8 [dict get $::gSpotifyState "item" "name"]]
             } else {
                 set track "Unknown"
             }
@@ -328,6 +333,7 @@ proc control { action } {
         rm log -error "Spotify control error: $errMsg"
     } else {
         rm setVariable updateForce 1
+        rm measure update "Tcl"
     }
 
 }
