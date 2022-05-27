@@ -8,28 +8,316 @@
 
 set debug 1
 
-proc Initialize {} {
+set gSpotifyThreadCode {
 
-    rm log -debug "Initializing the '[file tail [rm getSkinName]]' skin ..."
+    rm log -debug "\[Spotify thread\] Starting the thread ..."
 
     foreach tempVar [list TMPDIR TEMP TMP] {
         if { [info exists ::env($tempVar)] } {
             set tempDirectory [file join $::env($tempVar) rm-spotify-covers]
             if { [catch { file mkdir $tempDirectory } errMsg] } {
-                rm log -warning "could not create temp directory '$tempDirectory': $errMsg"
+                rm log -warning "\[Spotify thread\] could not create temp directory '$tempDirectory': $errMsg"
                 unset tempDirectory
             }
         }
     }
 
     if { [info exists tempDirectory] } {
-        rm log -debug "Using temp directory: $tempDirectory"
-        rm setVariable tempDirectory $tempDirectory
+        rm log -debug "\[Spotify thread\] Using temp directory: $tempDirectory"
+        set gTempDirectory $tempDirectory
     }
 
     lappend ::auto_path [file join [rm getPathResources] Scripts spotify-deps]
 
     package require tclspotify
+
+    uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
+    uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
+
+    ::spotify::callbackUserAuthState [list apply {{ } {
+        rm log -debug "\[Spotify thread\] Update Spotify client state ..."
+        storeVariable clientState [::spotify::getUserAuthState]
+    }}]
+
+    set gLatestDeviceId [rm getVariable latestDeviceId]
+    set gIsPlaying 0
+    set gLikeStateCache [dict create]
+
+    proc updateSpotifyState { } {
+
+        unset -nocomplain ::gSpotifyTimer
+
+        rm log -debug "\[Spotify thread\] Update state ..."
+
+        if { [catch { updateSpotifyStateReal } errMsg] } {
+            rm log -tclerror "\[Spotify thread\] Update state ERROR: $errMsg"
+        }
+
+        set ::gSpotifyTimer [after 5000 updateSpotifyState]
+
+    }
+
+    proc updateSpotifyStateReal { } {
+
+        set state [dict create lastUpdate [clock seconds]]
+
+        dict set state current likeStatus "unknown"
+
+        if { [catch {
+
+            set spotifyState [::spotify::getPlaybackState]
+
+        } errMsg] } {
+
+            rm log -error "\[Spotify thread\] Could not update: $errMsg"
+
+            dict set state status "error"
+            dict set state errorMessage $errMsg
+
+        } elseif { $spotifyState eq "" } {
+
+            rm log -debug "\[Spotify thread\] state is empty"
+
+            dict set state status "pause"
+
+        } {
+
+            rm log -debug "\[Spotify thread\] Spotify has been successfully updated"
+
+            set ::gIsPlaying 0
+
+            if { [dict exists $spotifyState "item" "id"] } {
+                if { [dict exists $::gLikeStateCache [dict get $spotifyState "item" "id"]] } {
+                    dict set state current likeStatus [dict get $::gLikeStateCache [dict get $spotifyState "item" "id"] status]
+                }
+            }
+
+            if { ![dict exist $spotifyState "progress_ms"] } {
+                rm log -debug "\[Spotify thread\] could not detect position, progress_ms doesn't exist"
+            } elseif { ![dict exist $spotifyState "item" "duration_ms"] } {
+                rm log -debug "\[Spotify thread\] could not detect position, item.duration_ms doesn't exist"
+            } elseif { ![string is integer -strict [dict get $spotifyState "progress_ms"]] } {
+                rm log -debug "\[Spotify thread\] could not detect position, progress_ms is not integer"
+            } elseif { ![string is integer -strict [dict get $spotifyState "item" "duration_ms"]] } {
+                rm log -debug "\[Spotify thread\] could not detect position, item.duration_ms is not integer"
+            } else {
+                dict set state current position   [dict get $spotifyState "progress_ms"]
+                dict set state current duration   [dict get $spotifyState "item" "duration_ms"]
+                dict set state current lastUpdate [clock seconds]
+            }
+
+            if { [dict exists $spotifyState "device" "id"] } {
+
+                set device [dict get $spotifyState "device" "id"]
+
+                if { $device ne $::gLatestDeviceId } {
+                    storeVariable latestDeviceId $device
+                    set ::gLatestDeviceId $device
+                }
+
+            }
+
+            if { [dict exists $spotifyState "is_playing"] } {
+
+                if { [string is true -strict [dict get $spotifyState "is_playing"]] } {
+                    dict set state status "play"
+                    set ::gIsPlaying 1
+                } elseif { [string is false -strict [dict get $spotifyState "is_playing"]] } {
+                    dict set state status "pause"
+                } else {
+                    rm log -error "\[Spotify thread\] could not detect playing state: [dict get $spotifyState "is_playing"]"
+                    dict set state status "error"
+                    dict set state errorMessage "ERROR: unknown 'is_playing'"
+                }
+
+            } {
+                rm log -error "\[Spotify thread\] could not find 'is_playing' field: $spotifyState"
+                dict set state status "error"
+                dict set state errorMessage "ERROR: no is_playing"
+            }
+
+            #if { [dict exists $spotifyState "item" "album" "name"] } {
+            #    dict set state current track [encoding convertfrom utf-8 [dict get $spotifyState "item" "album" "name"]]
+            #} else {
+            #    dict set state current track "Unknown"
+            #}
+            if { [dict exists $spotifyState "item" "name"] } {
+                dict set state current track [encoding convertfrom utf-8 [dict get $spotifyState "item" "name"]]
+            } else {
+                dict set state current track "Unknown"
+            }
+
+            set artists [list]
+
+            if { [dict exists $spotifyState "item" "artists"] } {
+                if { [catch {
+                    foreach rec [dict get $spotifyState "item" "artists"] {
+                        if { [dict exists $rec name] } {
+                            lappend artists [encoding convertfrom utf-8 [dict get $rec name]]
+                        }
+                    }
+                } errMsg] } {
+                    rm log -error "\[Spotify thread\] error while creating artist name: $errMsg"
+                }
+            }
+
+            if { [llength $artists] } {
+                dict set state current artist [join $artists ", "]
+            } {
+                dict set state current artist "Unknown"
+            }
+
+            array set images [list]
+
+            if { [dict exists $spotifyState "item" "album" "images"] } {
+                if { [catch {
+                    foreach rec [dict get $spotifyState "item" "album" "images"] {
+                        if { [dict exists $rec height] && [dict exists $rec url] } {
+                            set images([dict get $rec height]) [dict get $rec url]
+                        }
+                    }
+                } errMsg] } {
+                    rm log -error "\[Spotify thread\] error while getting cover: $errMsg"
+                }
+            }
+
+            foreach h {64 300 640} {
+                if { [info exists images($h)] } {
+                    set coverURL $images($h)
+                    break
+                }
+            }
+
+            if { ![info exists coverURL] } {
+                rm log -warning "\[Spotify thread\] could not find suitable cover. Array names: [array names images]"
+            } else {
+
+                set coverFile "[binary encode hex [::twapi::md5 $coverURL]].jpg"
+                set coverFile [file join $::gTempDirectory $coverFile]
+
+                if { ![file exists $coverFile] } {
+
+                    if { [catch {
+                        set chan [open $coverFile w]
+                        ::http::geturl $coverURL -channel $chan -timeout 5000
+                    } errMsg] } {
+                        set coverFile ""
+                    } {
+                        rm log -debug "\[Spotify thread\] cover was successfully downloaded: $coverFile"
+                    }
+
+                    catch { close $chan }
+
+                    if { $coverFile eq "" } {
+                        catch { file delete -force -- $coverFile }
+                        unset coverFile
+                    }
+
+                }
+
+            }
+
+            if { [info exists coverFile] } {
+                dict set state current cover $coverFile
+            } {
+                dict set state current cover "images/unknown.png"
+            }
+
+        }
+
+        ::thread::send -async [rm getThreadMain] [list set ::gCurrentState $state]
+        #rm sendThread [rm getThreadMain] [list set ::gCurrentState $state]
+
+        if { [info exists spotifyState] } {
+
+            if { [dict exists $spotifyState "item" "id"] && ![dict exists $::gLikeStateCache [dict get $spotifyState "item" "id"]] } {
+                if { [catch {
+                    set likeState [::spotify::checkTracksForCurrentUser -ids [dict get $spotifyState "item" "id"]]
+                } errMsg] } {
+                    rm log -error "\[Spotify thread\] could not detect like status for id '[dict get $spotifyState "item" "id"]': $errMsg"
+                } {
+                    set likeState [string trim $likeState "\[\] "]
+                    if { [string is true -strict $likeState] } {
+                        set updateLikeState "true"
+                    } elseif { [string is false -strict $likeState] } {
+                        set updateLikeState "false"
+                    } else {
+                        rm log -error "\[Spotify thread\] could not detect like status for id '[dict get $spotifyState "item" "id"]': $likeState"
+                    }
+                }
+            }
+
+            if { [info exists updateLikeState] } {
+                rm log -debug "\[Spotify thread\] the like state has been updated"
+                dict set ::gLikeStateCache [dict get $spotifyState "item" "id"] status $updateLikeState
+                dict set state current likeStatus [dict get $::gLikeStateCache [dict get $spotifyState "item" "id"] status]
+                dict set state lastUpdate [expr { [dict get $state lastUpdate] + 1 }]
+                ::thread::send -async [rm getThreadMain] [list set ::gCurrentState $state]
+            }
+
+        }
+
+    }
+
+    proc forceUpdateSpotifyState { } {
+        if { ![info exists ::gSpotifyTimer] } {
+            rm log -debug "\[Spotify thread\] forceUpdateSpotifyState: Already in update"
+            return
+        }
+        #rm log -debug "\[Spotify thread\] force update"
+        #foreach id [after info] { rm log -debug "After before: $id [after info $id]" }
+        after cancel $::gSpotifyTimer
+        #foreach id [after info] { rm log -debug "After after: $id [after info $id]" }
+        updateSpotifyState
+        #foreach id [after info] { rm log -debug "After after script: $id [after info $id]" }
+    }
+
+    proc setSpotifyClientState { state } {
+        ::spotify::setUserAuthState $state
+        storeVariable clientState $state
+        forceUpdateSpotifyState
+    }
+
+    proc controlSpotify { cmd } {
+        rm log -debug "\[Spotify thread\] control: $cmd"
+        if { [catch {
+            switch -exact -- $cmd {
+                "prev" {
+                    ::spotify::skipToPrevious
+                }
+                "next" {
+                    ::spotify::skipToNext
+                }
+                "play" {
+                    if { $::gIsPlaying } {
+                        ::spotify::pausePlayback
+                    } else {
+                        ::spotify::startPlayback -device_id [rm getVariable latestDeviceId]
+                    }
+                }
+                default {
+                    return -code error "unknown action: $cmd"
+                }
+            }
+        } errMsg] } {
+            rm log -error "\[Spotify thread\] Spotify control error: $errMsg"
+        } else {
+            forceUpdateSpotifyState
+        }
+    }
+
+    ::spotify::setUserAuthState [rm getVariable clientState]
+    updateSpotifyState
+
+    rm log -debug "\[Spotify thread\] The Spotify thread is working."
+
+}
+
+proc Initialize {} {
+
+    rm log -debug "Initializing the '[file tail [rm getSkinName]]' skin ..."
+
+    rm sendThread [set ::gSpotifyThread [rm newThread]] $::gSpotifyThreadCode
 
     uplevel #0 [list source [file join [rm getPathResources] Scripts _utilities.tcl]]
     uplevel #0 [list source [file join [rm getPathResources] Scripts _settings.tcl]]
@@ -42,300 +330,176 @@ proc Initialize {} {
             -action [rm bang CommandMeasure [rm getMeasureName] "rm tkcon"]
     }
 
-    ::spotify::callbackUserAuthState [list apply {{ } {
-        rm log -debug "Update Spotify client state ..."
-        storeVariable clientState [::spotify::getUserAuthState]
-    }}]
+    if { [catch {
+        set ::gSpotifyExe [string trim [lindex [split [registry get {HKEY_CLASSES_ROOT\spotify\shell\open\command} ""]] 0] "\""]
+    } errMsg] } {
+        rm log -warning "could not find spotify exe: $errMsg"
+        unset -nocomplain ::gSpotifyExe
+    } {
+        rm log -debug "Spotify exe: $::gSpotifyExe"
+    }
 
 }
 
 proc Update {} {
 
-    rm log -debug "Update the '[file tail [rm getSkinName]]' skin ..."
+    # get updates if any
+    update idletasks
 
-    # update spotify status only every 5 seconds
-    if {
-        ![info exists ::gLastSuccessfulUpdate] ||
-        [expr { [clock seconds] - $::gLastSuccessfulUpdate > 5 }] ||
-        [string is true -strict [rm getVariable updateForce]]
-    } {
+    if { ![info exists ::gCurrentState] } {
+        rm log -debug "The Spotify thread is not initialized yet"
+        return
+    }
 
-        unset -nocomplain ::gSpotifyStateIsPlaying
+    #rm log -debug "Update the '[file tail [rm getSkinName]]' skin ..."
 
-        updateSpotifyState
+    set state $::gCurrentState
 
-        set track ""
-        set artist ""
+    set checkUpdate [list apply {{ state args } {
 
-        set coverURL ""
-        set coverFile ""
+        if { ![dict exists $state {*}$args] } { return 0 }
 
-        if { [info exists ::gSpotifyStateError] } {
+        if { ![info exists ::gLastState] || ![dict exists $::gLastState {*}$args] || [dict get $state {*}$args] ne [dict get $::gLastState {*}$args] } {
+            dict set ::gLastState {*}$args [dict get $state {*}$args]
+            return 1
+        } {
+            return 0
+        }
 
-            set status "ERROR: $::gSpotifyStateError"
+    }} $state]
 
-        } elseif { $::gSpotifyState eq "" } {
+    # If nothing changed from last time
+    if { [{*}$checkUpdate lastUpdate] } {
 
-            rm log -debug "Spotify playback state is empty"
+        if { [{*}$checkUpdate status] } {
 
-            set status "Pause"
-
-        } else {
-
-            if { [dict exists $::gSpotifyState "device" "id"] } {
-
-                set device [dict get $::gSpotifyState "device" "id"]
-
-                if { $device ne [rm getVariable latestDeviceId] } {
-                    storeVariable latestDeviceId $device
-                }
-
-            }
-
-            if { [dict exists $::gSpotifyState "is_playing"] } {
-
-                if { [string is true -strict [dict get $::gSpotifyState "is_playing"]] } {
+            switch -exact -- [dict get $state status] {
+                play {
                     set status "Playing..."
-                    set ::gSpotifyStateIsPlaying 1
-                } elseif { [string is false -strict [dict get $::gSpotifyState "is_playing"]] } {
+                }
+                pause {
                     set status "Pause"
-                } else {
-                    rm log -error "could not detect playing state: [dict get $::gSpotifyState "is_playing"]"
-                    set status "ERROR: unknown 'is_playing'"
                 }
-
-            } {
-                rm log -error "could not find 'is_playing' field: $::gSpotifyState"
-                set status "ERROR: no is_playing"
+                error {
+                    set status "ERROR: [dict get $state errorMessage]"
+                }
+                default {
+                    set status "ERROR: unknown status: [dict get $state status]"
+                }
             }
 
-            #if { [dict exists $::gSpotifyState "item" "album" "name"] } {
-            #    set track [encoding convertfrom utf-8 [dict get $::gSpotifyState "item" "album" "name"]]
-            #} else {
-            #    set track "Unknown"
-            #}
-            if { [dict exists $::gSpotifyState "item" "name"] } {
-                set track [encoding convertfrom utf-8 [dict get $::gSpotifyState "item" "name"]]
+            rm setOption "Text" $status -section Status
+            rm setOption "ToolTipText" $status -section Status
+            rm meter update "Status"
+
+            if { [dict get $state status] eq "play" } {
+                rm setOption "Text" ";" -section ControlPlay
             } else {
-                set track "Unknown"
+                rm setOption "Text" "4" -section ControlPlay
             }
-
-            set artists [list]
-
-            if { [dict exists $::gSpotifyState "item" "artists"] } {
-                if { [catch {
-                    foreach rec [dict get $::gSpotifyState "item" "artists"] {
-                        if { [dict exists $rec name] } {
-                            lappend artists [encoding convertfrom utf-8 [dict get $rec name]]
-                        }
-                    }
-                } errMsg] } {
-                    rm log -error "error while creating artist name: $errMsg"
-                }
-            }
-
-            if { [llength $artists] } {
-                set artist [join $artists ", "]
-            } {
-                set artist "Unknown"
-            }
-
-            array set images [list]
-
-            if { [dict exists $::gSpotifyState "item" "album" "images"] } {
-                if { [catch {
-                    foreach rec [dict get $::gSpotifyState "item" "album" "images"] {
-                        if { [dict exists $rec height] && [dict exists $rec url] } {
-                            set images([dict get $rec height]) [dict get $rec url]
-                        }
-                    }
-                } errMsg] } {
-                    rm log -error "error while getting cover: $errMsg"
-                }
-            }
-
-            foreach h {64 300 640} {
-                if { [info exists images($h)] } {
-                    set coverURL $images($h)
-                    break
-                }
-            }
-
-            if { $coverURL eq "" } {
-                rm log -warning "could not find suitable cover. Array names: [array names images]"
-            } else {
-
-                set coverFile "[binary encode hex [::twapi::md5 $coverURL]].jpg"
-                set coverFile [file join [rm getVariable tempDirectory] $coverFile]
-
-                if { ![file exists $coverFile] } {
-
-                    if { [catch {
-                        set chan [open $coverFile w]
-                        ::http::geturl $coverURL -channel $chan -timeout 5000
-                    } errMsg] } {
-                        set coverFile ""
-                    } {
-                        rm log -debug "cover was successfully downloaded: $coverFile"
-                    }
-
-                    catch { close $chan }
-
-                    if { $coverFile eq "" } {
-                        catch { file delete -force -- $coverFile }
-                    }
-
-                }
-
-            }
+            rm meter update "ControlPlay"
 
         }
 
-        if { [info exists ::gSpotifyStateIsPlaying] } {
-            rm setOption "Text" ";" -section ControlPlay
-        } else {
-            rm setOption "Text" "4" -section ControlPlay
-        }
-        rm meter update "ControlPlay"
-
-        rm setOption "Text" $status -section Status
-        rm meter update "Status"
-
-        rm setOption "Text" $track -section Track
-        rm setOption "ToolTipText" "$track\n$artist" -section Track
-        rm meter update "Track"
-
-        rm setOption "Text" $artist -section Artist
-        rm setOption "ToolTipText" "$track\n$artist" -section Artist
-        rm meter update "Artist"
-
-        if { $coverFile eq "" } {
-            set coverFile "images/unknown.png"
+        if { [{*}$checkUpdate current track] } {
+            rm setOption "Text" [dict get $state current track] -section Track
+            set isUpdatedTrack 1
         }
 
-        rm setOption "ImageName" $coverFile -section Cover
-        rm meter update "Cover"
-
-    }
-
-    set barCurrent 0
-    set barMax 1
-    set timer ""
-
-    if { ![info exists ::gSpotifyState] || $::gSpotifyState eq "" } {
-        rm log -debug "could not detect position, gSpotifyState doesn't exist or empty"
-    } {
-
-        if { ![dict exist $::gSpotifyState "progress_ms"] } {
-            rm log -debug "could not detect position, progress_ms doesn't exist"
-        } elseif { ![dict exist $::gSpotifyState "item" "duration_ms"] } {
-            rm log -debug "could not detect position, item.duration_ms doesn't exist"
-        } elseif { ![string is integer -strict [dict get $::gSpotifyState "progress_ms"]] } {
-            rm log -debug "could not detect position, progress_ms is not integer"
-        } elseif { ![string is integer -strict [dict get $::gSpotifyState "item" "duration_ms"]] } {
-            rm log -debug "could not detect position, item.duration_ms is not integer"
-        } else {
-
-            set barMax     [dict get $::gSpotifyState "item" "duration_ms"]
-            set barCurrent [dict get $::gSpotifyState "progress_ms"]
-
-            if { [info exists ::gSpotifyStateIsPlaying] } {
-                set barCurrent [expr { $barCurrent + 1000 * ([clock seconds] - $::gLastSuccessfulUpdate) }]
-            }
-
-            if { $barMax > $barCurrent } {
-
-                set left  [expr { ($barMax - $barCurrent) / 1000 }]
-                set leftM [expr { $left / 60 }]
-                set leftS [expr { $left % 60 }]
-
-            } {
-
-                set leftM [set leftS 0]
-
-            }
-
-            set timer [format "\[ %0.2i:%0.2i \]" $leftM $leftS]
-
-            if { $barCurrent > $barMax } {
-                rm setVariable updateForce 1
-            }
-
+        if { [{*}$checkUpdate current artist] } {
+            rm setOption "Text" [dict get $state current artist] -section Artist
+            set isUpdatedArtist 1
         }
 
-    }
+        if { [info exists isUpdatedTrack] || [info exists isUpdatedArtist] } {
+            if { [dict exists $state current track] && [dict exists $state current artist] } {
+                set tooltip "[dict get $state current track]\n[dict get $state current artist]"
+                rm setOption "ToolTipText" "$tooltip" -section Artist
+                rm setOption "ToolTipText" "$tooltip" -section Track
+                set isUpdatedArtist [set isUpdatedTrack 1]
+            }
+        }
 
-    rm setOption "Text" $timer -section "Timer"
-    rm meter update "Timer"
+        if { [info exists isUpdatedTrack]  } { rm meter update "Track"  }
+        if { [info exists isUpdatedArtist] } { rm meter update "Artist" }
 
-    rm setOption "Formula"  $barCurrent -section MeasurePlayBar
-    rm setOption "MaxValue" $barMax     -section MeasurePlayBar
-    rm measure update "MeasurePlayBar"
+        if { [{*}$checkUpdate current cover] } {
+            rm setOption "ImageName" [dict get $state current cover] -section Cover
+            rm meter update "Cover"
+        }
 
-}
-
-proc updateSpotifyState { } {
-
-    rm log -debug "Update Spotify status ..."
-
-    set ::gLastSuccessfulUpdate [clock seconds]
-    rm setVariable updateForce 0
-
-    unset -nocomplain ::gSpotifyState
-
-    ::spotify::setUserAuthState [rm getVariable clientState]
-
-    if { [catch {
-
-        set ::gSpotifyState [::spotify::getPlaybackState]
-
-    } errMsg] } {
-
-        set ::gSpotifyStateError $errMsg
-        rm log -error "Could not update spotify: $errMsg"
+        if { [{*}$checkUpdate current likeStatus] } {
+            switch -exact -- [dict get $state current likeStatus] {
+                true {
+                    rm setOption "FontColor" "#ColorGreensea#" -section "LikeStatus"
+                    rm meter show "LikeStatus"
+                }
+                false {
+                    rm setOption "FontColor" "#ColorConcrete#" -section "LikeStatus"
+                    rm meter show "LikeStatus"
+                }
+                default {
+                    rm meter hide "LikeStatus"
+                }
+            }
+            rm meter update "LikeStatus"
+        }
 
     } {
 
-        rm log -debug "Spotify has been successfully updated"
-        unset -nocomplain ::gSpotifyStateError
+        #rm log -debug "Spotify state is the same"
+
+    }
+
+    {*}$checkUpdate current position
+    {*}$checkUpdate current duration
+    {*}$checkUpdate current lastUpdate
+
+    if { [dict exists $::gLastState current position] && [dict exists $::gLastState current duration] } {
+
+        if { [dict get $state status] eq "play" } {
+            set virtualPosition [expr { [dict get $::gLastState current position] + 1000 * ([clock seconds] - [dict get $::gLastState current lastUpdate]) }]
+        } {
+            set virtualPosition [dict get $::gLastState current position]
+        }
+        set posBar  [list $virtualPosition [dict get $::gLastState current duration]]
+        set posLeft [expr { ([dict get $::gLastState current duration] - $virtualPosition) / 1000 }]
+
+        if { ![dict exists $::gLastState posBar] || [dict get $::gLastState posBar] ne $posBar } {
+            dict set ::gLastState posBar $posBar
+            rm setOption "Formula"  [lindex [dict get $::gLastState posBar] 0] -section MeasurePlayBar
+            rm setOption "MaxValue" [lindex [dict get $::gLastState posBar] 1] -section MeasurePlayBar
+            rm measure update "MeasurePlayBar"
+        }
+
+        if { ![dict exists $::gLastState posLeft] || [dict get $::gLastState posLeft] ne $posLeft } {
+            dict set ::gLastState posLeft $posLeft
+            set left [dict get $::gLastState posLeft]
+            if { $left < 0 } {
+                set left 0
+                sendToSpotify [list "forceUpdateSpotifyState"]
+            }
+            set leftM [expr { $left / 60 }]
+            set leftS [expr { $left % 60 }]
+            rm setOption "Text" [format "\[ %0.2i:%0.2i \]" $leftM $leftS] -section "Timer"
+            rm meter update "Timer"
+        }
 
     }
 
 }
 
-proc control { action } {
+proc sendToSpotify { code } {
+    ::thread::send -async $::gSpotifyThread $code
+}
 
-    ::spotify::setUserAuthState [rm getVariable clientState]
+proc control { cmd } {
+    sendToSpotify [list controlSpotify $cmd]
+}
 
-    if { [catch {
-
-        if { $action eq "prev" } {
-
-            ::spotify::skipToPrevious
-
-        } elseif { $action eq "next" } {
-
-            ::spotify::skipToNext
-
-        } elseif { $action eq "play" } {
-
-            if { [info exists ::gSpotifyStateIsPlaying] } {
-                ::spotify::pausePlayback
-            } else {
-                ::spotify::startPlayback -device_id [rm getVariable latestDeviceId]
-            }
-
-        } else {
-            return -code error "unknown action: $action"
-        }
-
-    } errMsg] } {
-        rm log -error "Spotify control error: $errMsg"
-    } else {
-        rm setVariable updateForce 1
-        rm measure update "Tcl"
-    }
-
+proc showSpotify { } {
+    if { ![info exists ::gSpotifyExe] } return
+    exec $::gSpotifyExe
 }
 
 set settingsUI {
@@ -363,31 +527,18 @@ set settingsUI {
 
         rm log -debug "Apply settings..."
 
-        set update 0
-
         if { $::gClientId ne [rm getVariable "clientId"] || $::gClientSecret ne [rm getVariable "clientSecret"] } {
             storeVariable clientId     $::gClientId
             storeVariable clientSecret $::gClientSecret
-            storeVariable clientState  [set $varState]
-            rm setVariable updateForce 1
-            set update 1
+            rm sendThread [rm getThreadMain] [list sendToSpotify [list setSpotifyClientState [set $varState]]]
         } {
             rm log -debug "clientId&clientSecret are not changed"
             if { [set $varState] ne "" } {
                 rm log -debug "client state has been updated"
-                storeVariable clientState [set $varState]
-                rm setVariable updateForce 1
-                set update 1
+                rm sendThread [rm getThreadMain] [list sendToSpotify [list setSpotifyClientState [set $varState]]]
             } else {
                 rm log -debug "client state has NOT been updated"
             }
-        }
-
-        if { $update } {
-            rm log -debug "Request update..."
-            rm measure update [rm getMeasureName]
-        } else {
-            rm log -debug "No update required"
         }
 
     }}]

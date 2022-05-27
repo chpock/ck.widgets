@@ -43,6 +43,30 @@ set _spotify(getCurrentUserProfile) {
     content-type application/json
 }
 
+set _spotify(saveTracksForCurrentUser) {
+    url https://api.spotify.com/v1/me/tracks
+    req_args { ids: }
+    method PUT
+    headers { Authorization {Bearer %token%} }
+    content-type application/json
+}
+
+set _spotify(removeTracksForCurrentUser) {
+    url https://api.spotify.com/v1/me/tracks
+    req_args { ids: }
+    method DELETE
+    headers { Authorization {Bearer %token%} }
+    content-type application/json
+}
+
+set _spotify(checkTracksForCurrentUser) {
+    url https://api.spotify.com/v1/me/tracks/contains
+    req_args { ids: }
+    method GET
+    headers { Authorization {Bearer %token%} }
+    content-type application/json
+}
+
 set _spotify(getPlaybackState) {
     url https://api.spotify.com/v1/me/player
     headers { Authorization {Bearer %token%} }
@@ -89,6 +113,10 @@ namespace eval ::spotify {}
 proc ::spotify::checkAccessToken { } {
 
     variable state
+
+    if { ![array exists state] || ![info exists state(expires_in)] } {
+        return -code error "Spotify: not authenticated"
+    }
 
     if { [clock seconds] + 30 < $state(expires_in) } {
         return
